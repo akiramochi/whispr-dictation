@@ -36,6 +36,21 @@ python -m venv .venv
 > The Whisper model (~140 MB for `base.en`) downloads once on first use and is
 > cached under `~/.cache/huggingface`. Everything after that is offline.
 
+### GPU acceleration (optional, NVIDIA)
+
+Whispr runs on the CPU out of the box. If you have an NVIDIA GPU, install the
+CUDA runtime wheels for a large speedup (transcription is typically 5–15×
+faster, making live typing feel instant):
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
+```
+
+That's all — no CUDA toolkit needed. Whispr auto-detects the GPU and uses it
+(`float16`), falling back to CPU automatically if anything's missing. The tray
+menu shows whether it's **Running on GPU (CUDA)** or **CPU**, and you can force
+either in Settings → Transcription → Processor.
+
 ## Run
 
 ```powershell

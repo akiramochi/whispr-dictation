@@ -1,0 +1,7 @@
+# Optional GPU acceleration (NVIDIA only).
+# Install on top of requirements.txt to run transcription on a CUDA GPU:
+#   pip install -r requirements-gpu.txt
+# These wheels bundle the cuBLAS/cuDNN runtime DLLs CTranslate2 needs (~1.2 GB).
+# Requires an NVIDIA GPU with a recent driver; no separate CUDA toolkit needed.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

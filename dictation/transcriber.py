@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal
 
+from . import cuda
 from .audio import SAMPLE_RATE
 
 
@@ -22,40 +23,67 @@ class Transcriber(QObject):
     partial = Signal(str)                       # live partial transcript
     error = Signal(str)
     model_loading = Signal(str)                 # model name
-    model_ready = Signal()
+    model_ready = Signal(str)                    # active device ("cuda"/"cpu")
 
-    def __init__(self, model_name: str, compute_type: str, language: str):
+    def __init__(self, model_name: str, processor: str, language: str):
         super().__init__()
         self.model_name = model_name
-        self.compute_type = compute_type
+        self.processor = processor
         self.language = language
         self._model = None
+        self.active_device = "cpu"
         self.transcribe_requested.connect(self._on_transcribe)
         self.partial_requested.connect(self._on_partial)
         self.load_requested.connect(self._ensure_model)
 
-    def reconfigure(self, model_name: str, compute_type: str, language: str) -> None:
-        changed = (model_name != self.model_name) or (compute_type != self.compute_type)
+    def reconfigure(self, model_name: str, processor: str, language: str) -> None:
+        changed = (model_name != self.model_name) or (processor != self.processor)
         self.model_name = model_name
-        self.compute_type = compute_type
+        self.processor = processor
         self.language = language
         if changed:
             self._model = None  # force reload on next use
 
+    def _device_plan(self) -> list[tuple[str, str]]:
+        """Ordered (device, compute_type) attempts based on the processor pref.
+
+        "auto"/"cuda" try the GPU first (when present) and fall back to CPU;
+        "cpu" stays on the CPU.
+        """
+        plan: list[tuple[str, str]] = []
+        if self.processor in ("auto", "cuda") and cuda.is_available():
+            plan.append(("cuda", "float16"))
+        plan.append(("cpu", "int8"))
+        return plan
+
     def _ensure_model(self) -> bool:
         if self._model is not None:
             return True
+        from faster_whisper import WhisperModel
+        self.model_loading.emit(self.model_name)
+        last_exc: Exception | None = None
+        for device, compute_type in self._device_plan():
+            try:
+                self._model = WhisperModel(
+                    self.model_name, device=device, compute_type=compute_type
+                )
+                self.active_device = device
+                if device == "cuda":
+                    self._warmup()  # absorb one-time CUDA/cuDNN JIT cost now
+                self.model_ready.emit(device)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc  # e.g. GPU OOM -> fall through to CPU
+        self.error.emit(f"Could not load model '{self.model_name}': {last_exc}")
+        return False
+
+    def _warmup(self) -> None:
         try:
-            from faster_whisper import WhisperModel
-            self.model_loading.emit(self.model_name)
-            self._model = WhisperModel(
-                self.model_name, device="cpu", compute_type=self.compute_type
-            )
-            self.model_ready.emit()
-            return True
-        except Exception as exc:  # noqa: BLE001
-            self.error.emit(f"Could not load model '{self.model_name}': {exc}")
-            return False
+            silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
+            segments, _ = self._model.transcribe(silence, beam_size=1)
+            list(segments)
+        except Exception:
+            pass
 
     def _on_transcribe(self, audio: np.ndarray) -> None:
         if audio is None or len(audio) < SAMPLE_RATE * 0.2:
@@ -95,10 +123,10 @@ class Transcriber(QObject):
 class TranscriberThread:
     """Owns a QThread hosting a Transcriber and forwards its signals."""
 
-    def __init__(self, model_name: str, compute_type: str, language: str):
+    def __init__(self, model_name: str, processor: str, language: str):
         self.thread = QThread()
         self.thread.setObjectName("whispr-transcriber")
-        self.worker = Transcriber(model_name, compute_type, language)
+        self.worker = Transcriber(model_name, processor, language)
         self.worker.moveToThread(self.thread)
         self.thread.start()
 
@@ -111,8 +139,8 @@ class TranscriberThread:
     def partial(self, audio: np.ndarray) -> None:
         self.worker.partial_requested.emit(audio)
 
-    def reconfigure(self, model_name: str, compute_type: str, language: str) -> None:
-        self.worker.reconfigure(model_name, compute_type, language)
+    def reconfigure(self, model_name: str, processor: str, language: str) -> None:
+        self.worker.reconfigure(model_name, processor, language)
 
     def shutdown(self) -> None:
         self.thread.quit()

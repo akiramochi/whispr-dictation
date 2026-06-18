@@ -25,7 +25,8 @@ MODELS = ["tiny.en", "tiny", "base.en", "base", "small.en", "small", "medium", "
 class Config:
     model: str = "base.en"
     language: str = ""              # "" = autodetect, else ISO code like "en"
-    compute_type: str = "int8"      # int8 is fast on CPU
+    processor: str = "auto"         # "auto", "cuda" (GPU), or "cpu"
+    compute_type: str = "int8"      # CPU compute type; GPU uses float16
     device_index: int | None = None  # input device, None = system default
     hotkey: str = "ctrl+alt+d"
     mode: str = "toggle"            # "toggle" or "hold"

@@ -123,6 +123,15 @@ class SettingsWindow(QWidget):
         self.device_box.setCurrentIndex(di)
         grid.addWidget(QLabel("Microphone"), 2, 0)
         grid.addWidget(self.device_box, 2, 1)
+
+        self.proc_box = QComboBox()
+        self.proc_box.addItem("Auto (GPU if available)", "auto")
+        self.proc_box.addItem("GPU (CUDA)", "cuda")
+        self.proc_box.addItem("CPU", "cpu")
+        pi = {"auto": 0, "cuda": 1, "cpu": 2}.get(config.processor, 0)
+        self.proc_box.setCurrentIndex(pi)
+        grid.addWidget(QLabel("Processor"), 3, 0)
+        grid.addWidget(self.proc_box, 3, 1)
         grid.setColumnStretch(1, 1)
         ml.addLayout(grid)
         hint = QLabel("Larger models are more accurate but slower. The model "
@@ -196,6 +205,7 @@ class SettingsWindow(QWidget):
         c.model = self.model_box.currentText()
         c.language = self.lang_box.currentData()
         c.device_index = self.device_box.currentData()
+        c.processor = self.proc_box.currentData()
         c.mode = self.mode_box.currentData()
         c.hotkey = self._pending_hotkey
         c.inject_method = "paste" if self.paste_chk.isChecked() else "type"

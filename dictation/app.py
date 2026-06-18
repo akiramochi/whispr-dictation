@@ -39,12 +39,13 @@ class Controller(QObject):
         self.overlay = Overlay(self.recorder, self.config.accent)
 
         self.transcriber = TranscriberThread(
-            self.config.model, self.config.compute_type, self.config.language
+            self.config.model, self.config.processor, self.config.language
         )
         self.transcriber.worker.finished.connect(self._on_transcribed)
         self.transcriber.worker.partial.connect(self._on_partial_text)
         self.transcriber.worker.error.connect(self._on_error)
         self.transcriber.worker.model_loading.connect(self._on_model_loading)
+        self.transcriber.worker.model_ready.connect(self._on_model_ready)
 
         # Timer that drives the live (partial) transcript while recording.
         self._partial_timer = QTimer(self)
@@ -69,6 +70,10 @@ class Controller(QObject):
         self._status_action = QAction("Ready", menu)
         self._status_action.setEnabled(False)
         menu.addAction(self._status_action)
+
+        self._device_action = QAction("Loading…", menu)
+        self._device_action.setEnabled(False)
+        menu.addAction(self._device_action)
         menu.addSeparator()
 
         self._hint_action = QAction("", menu)
@@ -228,6 +233,12 @@ class Controller(QObject):
             self.overlay.message = f"Loading {name}…"
             self.overlay.update()
 
+    def _on_model_ready(self, device: str) -> None:
+        label = "GPU (CUDA)" if device == "cuda" else "CPU"
+        _log.info("model ready on %s", device)
+        self._status_action.setText("Ready")
+        self._device_action.setText(f"Running on {label}")
+
     # --- settings / lifecycle -------------------------------------------
     def open_settings(self) -> None:
         if self._settings is None:
@@ -239,7 +250,7 @@ class Controller(QObject):
 
     def _apply_settings(self) -> None:
         self.transcriber.reconfigure(
-            self.config.model, self.config.compute_type, self.config.language
+            self.config.model, self.config.processor, self.config.language
         )
         self.hotkeys.set_hotkey(self.config.hotkey)
         self.recorder.device_index = self.config.device_index
